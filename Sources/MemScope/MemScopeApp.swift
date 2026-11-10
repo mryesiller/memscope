@@ -10,7 +10,7 @@ struct MemScopeApp: App {
         Window("MemScope", id: "main") {
             ContentView()
                 .environment(store)
-                .frame(minWidth: 1180, minHeight: 760)
+                .frame(minWidth: 960, minHeight: 680)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1320, height: 880)
@@ -198,20 +198,25 @@ enum Snapshot {
     static func render(to dir: URL) {
         let store = MemoryStore.shared
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        write(DashboardView(scrollable: false).frame(width: 1240), "dashboard", dir)
+        write(DashboardView(fixedWidth: 1240), "dashboard", dir)
+        write(DashboardView(fixedWidth: 760), "dashboard-narrow", dir)
+        write(ProcessesView().frame(width: 760, height: 420), "processes-narrow", dir)
+        write(ProcessesView().frame(width: 1100, height: 420), "processes-wide", dir)
         let rows = VStack(spacing: 2) {
             ForEach(store.groups.prefix(18)) { GroupRow(group: $0, maxMem: Double(store.groups.first?.memory ?? 1)) }
         }.padding(20).frame(width: 760)
         write(rows, "processes", dir)
         if let g = store.groups.first(where: { $0.category == .app }) {
             write(InspectorView(group: g, scrollable: false).frame(width: 400), "inspector", dir)
+            write(InspectorView(group: g, scrollable: false).frame(width: 300), "inspector-narrow", dir)
         }
         if let g = store.groups.first(where: { $0.category == .system || $0.category == .critical }) {
             write(InspectorView(group: g, scrollable: false).frame(width: 400), "inspector-system", dir)
         }
         write(MenuBarView(), "menubar", dir)
         store.reloadLaunchItems()
-        write(MaintenanceView(scrollable: false).frame(width: 1240), "maintenance", dir)
+        write(MaintenanceView(fixedWidth: 1240), "maintenance", dir)
+        write(MaintenanceView(fixedWidth: 760), "maintenance-narrow", dir)
     }
 
     private static func write<V: View>(_ view: V, _ name: String, _ dir: URL) {

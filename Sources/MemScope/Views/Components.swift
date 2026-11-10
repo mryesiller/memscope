@@ -162,3 +162,52 @@ struct LiveDot: View {
             .shadow(color: color.opacity(0.9), radius: 4)
     }
 }
+
+// MARK: - Uyarlanabilir düzen
+
+/// İçeriğe mevcut genişliği verir. `fixedWidth` verilirse (snapshot) GeometryReader kullanılmaz.
+struct WidthReader<Content: View>: View {
+    var fixedWidth: CGFloat? = nil
+    @ViewBuilder var content: (CGFloat) -> Content
+
+    var body: some View {
+        if let fixedWidth {
+            content(fixedWidth).frame(width: fixedWidth)
+        } else {
+            GeometryReader { geo in
+                ScrollView { content(geo.size.width).frame(width: geo.size.width) }
+            }
+        }
+    }
+}
+
+/// Başlık + sağdaki kontroller. Sığmazsa kontroller başlığın altına iner; başlık asla harf harf kırılmaz.
+struct PageHeader<Trailing: View>: View {
+    let title: String
+    let subtitle: String
+    var titleSize: CGFloat = 28
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 16) {
+                titleBlock
+                Spacer(minLength: 12)
+                trailing().fixedSize()
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                titleBlock
+                trailing().fixedSize()
+            }
+        }
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: titleSize, weight: .bold, design: .rounded))
+                .lineLimit(1).fixedSize()
+            Text(subtitle).font(.system(size: 12.5)).foregroundStyle(Theme.secondaryText)
+                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}

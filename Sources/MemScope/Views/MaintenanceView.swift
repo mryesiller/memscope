@@ -2,40 +2,45 @@ import SwiftUI
 
 struct MaintenanceView: View {
     @Environment(MemoryStore.self) private var store
-    var scrollable = true
+    var fixedWidth: CGFloat? = nil
 
     var body: some View {
-        if scrollable { ScrollView { content } } else { content }
+        WidthReader(fixedWidth: fixedWidth) { w in content(width: w - 48) }
+            .onAppear { store.reloadLaunchItems() }
     }
 
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Bakım & Optimize").font(.system(size: 28, weight: .bold, design: .rounded))
-                    Text("Belleği boşaltın, gereksiz uygulamaları toplu kapatın, otomatik başlayanları görün.")
-                        .font(.system(size: 12.5)).foregroundStyle(Theme.secondaryText)
-                }
-                Spacer()
+    private func content(width: CGFloat) -> some View {
+        let wide = width >= 960
+        return VStack(alignment: .leading, spacing: 16) {
+            PageHeader(title: "Bakım & Optimize",
+                       subtitle: "Belleği boşaltın, gereksiz uygulamaları toplu kapatın, otomatik başlayanları görün.") {
                 RefreshControl()
             }
 
-            HStack(alignment: .top, spacing: 16) {
+            if wide {
+                HStack(alignment: .top, spacing: 16) {
+                    OptimizeHeroCard()
+                    VStack(spacing: 16) {
+                        ActionCard(action: .purge, accent: Theme.cached)
+                        ActionCard(action: .release, accent: Theme.compressed)
+                    }
+                    .frame(width: 340)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            } else {
                 OptimizeHeroCard()
-                VStack(spacing: 16) {
+                HStack(alignment: .top, spacing: 16) {
                     ActionCard(action: .purge, accent: Theme.cached)
                     ActionCard(action: .release, accent: Theme.compressed)
                 }
-                .frame(width: 340)
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .fixedSize(horizontal: false, vertical: true)
 
-            HowItWorksCard()
-            BulkQuitCard()
-            LaunchItemsCard()
+            HowItWorksCard(stacked: width < 820)
+            BulkQuitCard(columns: width >= 820 ? 2 : 1)
+            LaunchItemsCard(compact: width < 820)
         }
         .padding(24)
-        .onAppear { store.reloadLaunchItems() }
     }
 }
 
@@ -168,9 +173,12 @@ struct ActionCard: View {
 }
 
 struct HowItWorksCard: View {
+    var stacked = false
+
     var body: some View {
         Card(title: "Bu işlemler ne yapar, ne yapmaz?", icon: "info.circle.fill", accent: Theme.app) {
-            HStack(alignment: .top, spacing: 24) {
+            let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(alignment: .top, spacing: 24))
+            layout {
                 bullet("checkmark.circle.fill", Theme.pressureColor(.normal),
                        "Dosya önbelleğini boşaltır ve uygulamalara önbelleklerini bırakmalarını söyler. Ağır bir iş (oyun, render, VM) başlatmadan önce faydalıdır.")
                 bullet("arrow.triangle.2.circlepath", Theme.compressed,
@@ -194,6 +202,7 @@ struct HowItWorksCard: View {
 
 struct BulkQuitCard: View {
     @Environment(MemoryStore.self) private var store
+    var columns = 2
     @State private var selected: Set<String> = []
     @State private var initialized = false
     @State private var confirm = false
@@ -215,7 +224,7 @@ struct BulkQuitCard: View {
             if candidates.isEmpty {
                 Label("Kapatılabilecek uygun bir şey yok.", systemImage: "checkmark.seal.fill").foregroundStyle(Theme.pressureColor(.normal))
             }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 6) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: columns), spacing: 6) {
                 ForEach(candidates) { g in
                     Toggle(isOn: Binding(get: { selected.contains(g.id) },
                                          set: { if $0 { selected.insert(g.id) } else { selected.remove(g.id) } })) {
@@ -262,6 +271,7 @@ struct BulkQuitCard: View {
 
 struct LaunchItemsCard: View {
     @Environment(MemoryStore.self) private var store
+    var compact = false
 
     var body: some View {
         Card(title: "Otomatik Başlayanlar", icon: "power.circle.fill", accent: Theme.swap) {
@@ -291,7 +301,7 @@ struct LaunchItemsCard: View {
                             Text(item.label).font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.secondaryText).lineLimit(1)
                         }
                         Spacer(minLength: 8)
-                        tag(item.scope.rawValue, Theme.app)
+                        if !compact { tag(item.scope.rawValue, Theme.app) }
                         if item.keepAlive { tag("Sürekli açık", Theme.wired) }
                         else if item.runAtLoad { tag("Açılışta", ProcCategory.background.color) }
                         if item.disabled { tag("Devre dışı", .gray) }

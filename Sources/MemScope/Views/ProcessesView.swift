@@ -33,6 +33,10 @@ struct ProcessesView: View {
 
     var body: some View {
         @Bindable var store = store
+        GeometryReader { geo in
+        // Ayrıntı paneli pencereyle birlikte daralır (300–400 pt); liste kalan alanı alır.
+        let inspectorWidth = min(400, max(300, geo.size.width * 0.34))
+        let listWidth = geo.size.width - inspectorWidth - 40
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 toolbar
@@ -40,7 +44,7 @@ struct ProcessesView: View {
                 let items = filtered
                 let maxMem = Double(items.map(\.memory).max() ?? 1)
                 List(items, selection: $store.selectedGroupID) { g in
-                    GroupRow(group: g, maxMem: maxMem).tag(g.id)
+                    GroupRow(group: g, maxMem: maxMem, compact: listWidth < 640).tag(g.id)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                 }
@@ -48,7 +52,7 @@ struct ProcessesView: View {
                 .scrollContentBackground(.hidden)
             }
             .padding(.top, 20).padding(.horizontal, 20)
-            .frame(minWidth: 520, maxWidth: .infinity)
+            .frame(maxWidth: .infinity)
 
             Divider().overlay(Theme.cardStroke)
 
@@ -64,34 +68,68 @@ struct ProcessesView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .frame(width: 400)
+            .frame(width: inspectorWidth)
             .background(Color.black.opacity(0.15))
+        }
         }
     }
 
+    /// Geniş: tek satır. Dar: başlık + yenileme üstte, arama + sıralama altta.
     private var toolbar: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Uygulamalar & Süreçler").font(.system(size: 22, weight: .bold, design: .rounded))
-                Text("Yardımcı süreçler ait oldukları uygulamanın altında toplanır.")
-                    .font(.system(size: 11.5)).foregroundStyle(Theme.secondaryText)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                titleBlock
+                Spacer(minLength: 12)
+                RefreshControl().fixedSize()
+                searchField.frame(width: 220)
+                sortPicker
             }
-            Spacer()
-            RefreshControl()
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    titleBlock
+                    Spacer(minLength: 12)
+                    RefreshControl().fixedSize()
+                }
+                HStack(spacing: 10) {
+                    searchField.frame(maxWidth: 320)
+                    Spacer(minLength: 0)
+                    sortPicker
+                }
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                titleBlock
+                RefreshControl().fixedSize()
+                HStack(spacing: 10) { searchField; sortPicker }
+            }
+        }
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Uygulamalar & Süreçler").font(.system(size: 22, weight: .bold, design: .rounded))
+                .lineLimit(1).fixedSize()
+            Text("Yardımcı süreçler ait oldukları uygulamanın altında toplanır.")
+                .font(.system(size: 11.5)).foregroundStyle(Theme.secondaryText).lineLimit(1)
+        }
+    }
+
+    private var sortPicker: some View {
+        Picker("Sırala", selection: $sort) {
+            ForEach(SortKey.allCases) { Text($0.rawValue).tag($0) }
+        }
+        .fixedSize()
+    }
+
+    private var searchField: some View {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Theme.secondaryText)
-                TextField("Ara: isim, yol veya PID", text: $search).textFieldStyle(.plain).frame(width: 190)
+                TextField("Ara: isim, yol veya PID", text: $search).textFieldStyle(.plain).frame(minWidth: 120)
                 if !search.isEmpty {
                     Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(Theme.secondaryText)
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
-            Picker("Sırala", selection: $sort) {
-                ForEach(SortKey.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .frame(width: 170)
-        }
     }
 
     private var filterChips: some View {
@@ -124,6 +162,7 @@ struct ProcessesView: View {
 struct GroupRow: View {
     let group: AppGroup
     let maxMem: Double
+    var compact = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -143,7 +182,7 @@ struct GroupRow: View {
                 Text(group.summary).font(.system(size: 11)).foregroundStyle(Theme.secondaryText).lineLimit(1)
             }
             Spacer(minLength: 8)
-            CategoryBadge(category: group.category)
+            CategoryBadge(category: group.category, compact: compact)
             VStack(alignment: .trailing, spacing: 4) {
                 Text(group.memory.memString).font(.system(size: 13, weight: .bold, design: .rounded)).monospacedDigit()
                 MeterBar(fraction: Double(group.memory) / maxMem, color: group.category.color, height: 4).frame(width: 80)
@@ -262,17 +301,12 @@ struct InspectorView: View {
 
     private var actions: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Button { store.requestQuit(group) } label: {
-                    Label(group.category == .system ? "Yeniden Başlat" : "Kapat", systemImage: "xmark.circle").frame(maxWidth: .infinity)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { quitButton; forceButton; revealButton }
+                VStack(spacing: 8) {
+                    quitButton
+                    HStack(spacing: 8) { forceButton; revealButton }
                 }
-                .buttonStyle(.borderedProminent).tint(group.category == .system ? .gray : .accentColor)
-                Button { store.requestQuit(group, force: true) } label: {
-                    Label("Zorla Kapat", systemImage: "bolt.circle").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered).tint(.red)
-                Button { store.revealInFinder(group) } label: { Image(systemName: "magnifyingglass") }
-                    .buttonStyle(.bordered).help("Finder'da göster")
             }
             .controlSize(.large)
             .disabled(!group.canQuit)
@@ -280,6 +314,26 @@ struct InspectorView: View {
                 Label(reason, systemImage: "lock.fill").font(.system(size: 11)).foregroundStyle(Theme.secondaryText)
             }
         }
+    }
+
+    private var quitButton: some View {
+        Button { store.requestQuit(group) } label: {
+            Label(group.category == .system ? "Yeniden Başlat" : "Kapat", systemImage: "xmark.circle")
+                .lineLimit(1).fixedSize().frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent).tint(group.category == .system ? .gray : .accentColor)
+    }
+
+    private var forceButton: some View {
+        Button { store.requestQuit(group, force: true) } label: {
+            Label("Zorla Kapat", systemImage: "bolt.circle").lineLimit(1).fixedSize().frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered).tint(.red)
+    }
+
+    private var revealButton: some View {
+        Button { store.revealInFinder(group) } label: { Image(systemName: "magnifyingglass") }
+            .buttonStyle(.bordered).help("Finder'da göster")
     }
 
     private func stat(_ title: String, _ value: String, _ color: Color) -> some View {

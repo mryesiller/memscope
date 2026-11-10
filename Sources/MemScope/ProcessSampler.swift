@@ -123,6 +123,8 @@ enum ProcessSampler {
             if a == "-m", i + 1 < args.count { return String(args[i + 1].prefix(32)) }
             if a == "-c" || a == "-e" { return "satır içi kod" }
             if a.hasPrefix("-") { i += 1; continue }
+            // UUID gibi anlamsız argümanları atla
+            if a.count >= 32, a.filter({ $0 == "-" }).count == 4 { i += 1; continue }
             let name = (a as NSString).lastPathComponent
             return name.isEmpty ? nil : String(name.prefix(32))
         }

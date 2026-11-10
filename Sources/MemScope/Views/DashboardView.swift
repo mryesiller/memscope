@@ -3,15 +3,20 @@ import Charts
 
 struct DashboardView: View {
     @Environment(MemoryStore.self) private var store
-    var scrollable = true
+    /// Snapshot için sabit genişlik; normalde pencereden okunur.
+    var fixedWidth: CGFloat? = nil
 
     var body: some View {
-        if scrollable { ScrollView { content } } else { content }
+        WidthReader(fixedWidth: fixedWidth) { w in content(width: w - 48) }
     }
 
-    private var content: some View {
-            VStack(alignment: .leading, spacing: 16) {
-                header
+    /// Geniş: 3 sütunlu üst satır. Orta: gösterge + basınç yan yana, dağılım altta. Dar: alt kartlar alt alta.
+    private func content(width: CGFloat) -> some View {
+        let wide = width >= 1080
+        let twoColumnBottom = width >= 820
+        return VStack(alignment: .leading, spacing: 16) {
+            header
+            if wide {
                 HStack(alignment: .top, spacing: 16) {
                     GaugeCard().frame(width: 290)
                     BreakdownCard()
@@ -24,24 +29,34 @@ struct DashboardView: View {
                     CategoryCard().frame(width: 360)
                 }
                 .fixedSize(horizontal: false, vertical: true)
+            } else {
+                HStack(alignment: .top, spacing: 16) {
+                    GaugeCard()
+                    VStack(spacing: 16) { PressureCard(); SwapCard() }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                BreakdownCard()
+                HistoryCard()
+                CategoryCard()
+            }
 
+            if twoColumnBottom {
                 HStack(alignment: .top, spacing: 16) {
                     TopAppsCard()
                     SuggestionsCard()
                 }
                 .fixedSize(horizontal: false, vertical: true)
+            } else {
+                TopAppsCard()
+                SuggestionsCard()
             }
-            .padding(24)
+        }
+        .padding(24)
     }
 
     private var header: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Bellek Paneli").font(.system(size: 28, weight: .bold, design: .rounded))
-                Text("\(store.chipName) · \(store.system.total.memString) birleşik bellek · \(store.groups.filter { $0.category == .app }.count) açık uygulama · \(store.groups.reduce(0) { $0 + $1.processes.count }) süreç")
-                    .font(.system(size: 12.5)).foregroundStyle(Theme.secondaryText)
-            }
-            Spacer()
+        PageHeader(title: "Bellek Paneli",
+                   subtitle: "\(store.chipName) · \(store.system.total.memString) birleşik bellek · \(store.groups.filter { $0.category == .app }.count) açık uygulama · \(store.groups.reduce(0) { $0 + $1.processes.count }) süreç") {
             RefreshControl()
         }
     }
