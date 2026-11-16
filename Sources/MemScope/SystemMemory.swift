@@ -36,6 +36,8 @@ struct SystemMemorySnapshot: Sendable {
     var swapTotal: UInt64 = 0
     var pressure: PressureLevel = .normal
     var freePercent: Int = 100   // kern.memorystatus_level
+    var cpuUsage: Double = 0     // 0…1, tüm çekirdeklerin ortalaması
+    var cpuCount: Int = ProcessInfo.processInfo.activeProcessorCount
 
     var used: UInt64 { app + wired + compressed }
     var usedFraction: Double { total > 0 ? Double(used) / Double(total) : 0 }
@@ -84,6 +86,7 @@ enum SystemMemory {
         if let freePct = sysctlInt32("kern.memorystatus_level") {
             snap.freePercent = Int(freePct)
         }
+        snap.cpuUsage = CPUSampler.systemUsage()
         return snap
     }
 
@@ -102,4 +105,32 @@ enum SystemMemory {
     }
 
     static var chipName: String { sysctlString("machdep.cpu.brand_string") ?? "Apple Silicon" }
+}
+
+/// Sistem CPU kullanımı: host_processor_info'nun iki örnek arasındaki farkı. Örnekleme seri yapıldığı için durum statik tutulur.
+enum CPUSampler {
+    private static var previous: [UInt32] = []
+
+    static func systemUsage() -> Double {
+        var count: natural_t = 0
+        var info: processor_info_array_t?
+        var infoCount: mach_msg_type_number_t = 0
+        guard host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &count, &info, &infoCount) == KERN_SUCCESS,
+              let info else { return 0 }
+        defer { vm_deallocate(mach_task_self_, vm_address_t(bitPattern: info), vm_size_t(Int(infoCount) * MemoryLayout<integer_t>.stride)) }
+        let current = (0..<Int(infoCount)).map { UInt32(bitPattern: info[$0]) }
+        defer { previous = current }
+        guard previous.count == current.count else { return 0 }
+        var busy: UInt64 = 0, total: UInt64 = 0
+        let states = Int(CPU_STATE_MAX)
+        for cpu in 0..<Int(count) {
+            for state in 0..<states {
+                let i = cpu * states + state
+                let d = UInt64(current[i] &- previous[i])
+                total += d
+                if state != Int(CPU_STATE_IDLE) { busy += d }
+            }
+        }
+        return total > 0 ? Double(busy) / Double(total) : 0
+    }
 }

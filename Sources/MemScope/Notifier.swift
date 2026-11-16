@@ -48,6 +48,12 @@ final class Notifier {
         }
     }
 
+    /// Kural motorunun bildirimleri (bekleme süresi uygulanır)
+    func post(key: String, title: String, body: String) {
+        guard available else { return }
+        send(key: key, title: title, body: body)
+    }
+
     private func send(key: String, title: String, body: String) {
         if let last = lastSent[key], Date().timeIntervalSince(last) < cooldown { return }
         lastSent[key] = Date()

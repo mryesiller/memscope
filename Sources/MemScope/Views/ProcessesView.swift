@@ -160,6 +160,7 @@ struct ProcessesView: View {
 }
 
 struct GroupRow: View {
+    @Environment(MemoryStore.self) private var store
     let group: AppGroup
     let maxMem: Double
     var compact = false
@@ -182,6 +183,10 @@ struct GroupRow: View {
                 Text(group.summary).font(.system(size: 11)).foregroundStyle(Theme.secondaryText).lineLimit(1)
             }
             Spacer(minLength: 8)
+            if let iv = store.engine.interventions[group.id] {
+                if let a = iv.applied { InterventionBadge(action: a, simulated: false) }
+                else if let r = iv.requested { InterventionBadge(action: r, simulated: true) }
+            }
             CategoryBadge(category: group.category, compact: compact)
             VStack(alignment: .trailing, spacing: 4) {
                 Text(group.memory.memString).font(.system(size: 13, weight: .bold, design: .rounded)).monospacedDigit()
@@ -262,6 +267,7 @@ struct InspectorView: View {
                 }
 
                 actions
+                InterventionControls(group: group)
 
                 section("Süreçler", icon: "cpu") {
                     VStack(spacing: 0) {
@@ -352,5 +358,54 @@ struct InspectorView: View {
             Label(title, systemImage: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.secondaryText)
             content()
         }
+    }
+}
+
+/// Ayrıntı panelinde elle müdahale: arka plana al, dondur, normale döndür.
+struct InterventionControls: View {
+    @Environment(MemoryStore.self) private var store
+    let group: AppGroup
+
+    var body: some View {
+        let engine = store.engine
+        let iv = engine.interventions[group.id]
+        let protection = engine.protection(for: group, front: nil)
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Müdahale", systemImage: "shield.lefthalf.filled").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.secondaryText)
+            if let iv {
+                HStack(spacing: 6) {
+                    if let a = iv.applied { InterventionBadge(action: a, simulated: false) }
+                    else if let r = iv.requested { InterventionBadge(action: r, simulated: true) }
+                    Text(iv.sources.keys.sorted().joined(separator: ", ")).font(.system(size: 10.5)).foregroundStyle(Theme.secondaryText).lineLimit(2)
+                }
+            }
+            if group.canQuit && group.category != .system {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { bgButton; suspendButton; resetButton(iv) }
+                    VStack(alignment: .leading, spacing: 8) { HStack(spacing: 8) { bgButton; suspendButton }; resetButton(iv) }
+                }
+                .controlSize(.small)
+                Text("Arka plan modu uygulamayı verimlilik çekirdeklerine (E-core) taşır; dondurma CPU kullanımını sıfırlar. İkisi de geri alınabilir ve MemScope kapanınca otomatik geri alınır.")
+                    .font(.system(size: 10.5)).foregroundStyle(Theme.secondaryText).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Label(group.quitBlockReason ?? protection ?? "Bu sürece müdahale edilemez.", systemImage: "lock.fill")
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondaryText)
+            }
+        }
+    }
+
+    private var bgButton: some View {
+        Button { store.engine.applyManual(.background, to: group) } label: { Label("Arka plana al", systemImage: RuleAction.background.icon) }
+            .buttonStyle(.bordered)
+    }
+
+    private var suspendButton: some View {
+        Button { store.engine.applyManual(.suspend, to: group) } label: { Label("Dondur", systemImage: RuleAction.suspend.icon) }
+            .buttonStyle(.bordered).tint(Theme.swap)
+    }
+
+    private func resetButton(_ iv: Intervention?) -> some View {
+        Button { store.engine.release(groupID: group.id) } label: { Label("Normale döndür", systemImage: "arrow.uturn.backward") }
+            .buttonStyle(.bordered).disabled(iv == nil)
     }
 }

@@ -131,12 +131,13 @@ struct QuitRequest: Identifiable {
 }
 
 enum AppSection: String, CaseIterable, Identifiable {
-    case dashboard, processes, maintenance, settings
+    case dashboard, processes, rules, maintenance, settings
     var id: String { rawValue }
     var title: String {
         switch self {
         case .dashboard: return "Panel"
         case .processes: return "Uygulamalar & Süreçler"
+        case .rules: return "Kurallar & Koruma"
         case .maintenance: return "Bakım & Optimize"
         case .settings: return "Ayarlar"
         }
@@ -145,6 +146,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         switch self {
         case .dashboard: return "square.grid.2x2.fill"
         case .processes: return "list.bullet.rectangle.fill"
+        case .rules: return "shield.lefthalf.filled"
         case .maintenance: return "wand.and.stars"
         case .settings: return "gearshape.fill"
         }

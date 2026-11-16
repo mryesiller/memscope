@@ -48,7 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
     func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated { MemoryStore.shared.recorder.save() }
+        MainActor.assumeIsolated {
+            MemoryStore.shared.recorder.save()
+            MemoryStore.shared.engine.shutdown()   // dondurulan süreçleri asla dondurulmuş bırakma
+        }
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
@@ -74,6 +77,7 @@ struct ContentView: View {
                 switch store.section ?? .dashboard {
                 case .dashboard: DashboardView()
                 case .processes: ProcessesView()
+                case .rules: RulesView()
                 case .maintenance: MaintenanceView()
                 case .settings: SettingsView()
                 }
@@ -157,6 +161,13 @@ struct MenuBarView: View {
                     }
                 }
             }
+            if !store.engine.interventions.isEmpty {
+                Button { store.section = .rules; openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) } label: {
+                    Label("\(store.engine.interventions.count) uygulamaya müdahale ediliyor", systemImage: "shield.lefthalf.filled")
+                        .font(.system(size: 11.5))
+                }
+                .buttonStyle(.plain).foregroundStyle(ProcCategory.developer.color)
+            }
             if store.reclaimable > 0 {
                 Text("~\(store.reclaimable.memString) güvenle geri kazanılabilir")
                     .font(.system(size: 11)).foregroundStyle(ProcCategory.developer.color)
@@ -217,6 +228,8 @@ enum Snapshot {
         store.reloadLaunchItems()
         write(MaintenanceView(fixedWidth: 1240), "maintenance", dir)
         write(MaintenanceView(fixedWidth: 760), "maintenance-narrow", dir)
+        write(RulesView(fixedWidth: 1240), "rules", dir)
+        write(RulesView(fixedWidth: 760), "rules-narrow", dir)
     }
 
     private static func write<V: View>(_ view: V, _ name: String, _ dir: URL) {

@@ -1,8 +1,8 @@
 # MemScope
 
-**Mac için anlaşılır bellek yöneticisi.** Neyin ne kadar RAM kullandığını, her sürecin ne işe yaradığını ve kapatılmasının güvenli olup olmadığını Türkçe olarak gösterir. Tek tıkla önbellek temizleme ve bellek boşaltma yapar.
+**Mac için anlaşılır bellek yöneticisi ve arka plan koruyucusu.** Neyin ne kadar RAM kullandığını, her sürecin ne işe yaradığını ve kapatılmasının güvenli olup olmadığını Türkçe olarak gösterir. Arka plan uygulamaları sistemi zorladığında onları E-core'a alır veya dondurur — kullandığınız uygulamaya dokunmadan.
 
-*A friendly, native macOS memory manager (SwiftUI). It explains what every process does, whether it is safe to quit, and can purge caches / ask apps to release memory. UI is in Turkish.*
+*A friendly, native macOS memory manager and background governor (SwiftUI). It explains what every process does, whether it is safe to quit, can purge caches, and automatically moves CPU-hungry background apps to efficiency cores or suspends them under load — never the app you are using. UI is in Turkish.*
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black) ![Swift](https://img.shields.io/badge/Swift-5.10%2B-orange) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-native-blue) ![License: MIT](https://img.shields.io/badge/License-MIT-green)
 
@@ -21,6 +21,7 @@ Activity Monitor yüzlerce `mds_stores`, `Claude Helper (Renderer)`, `photoanaly
 |---|---|
 | **Panel** | Kullanılan bellek halkası, Activity Monitor ile aynı dağılım (uygulama / kablolu / sıkıştırılmış / önbellek), bellek basıncı, swap, canlı / 1 saat / 24 saat / 7 gün geçmiş grafiği, kategori halkası, en çok kullananlar, "kapatılabilecekler" ve hızla büyüyen uygulama uyarısı |
 | **Uygulamalar & Süreçler** | Gruplanmış liste, kategori filtreleri, arama (isim / yol / PID), komut satırı ipuçları (`python server.py`, `firecrawl-mcp`), ayrıntı paneli, bellek geçmişi, Kapat / Zorla Kapat |
+| **Kurallar & Koruma** | Sistem koruyucu (CPU), bellek koruyucu, odak modu, kendi kurallarınız; Kapalı / Deneme / Uygula modları, etkin müdahaleler ve olay kaydı |
 | **Bakım & Optimize** | Tek tıkla optimize, önbellek temizleme (`purge`), bellek boşaltma (uygulamalara bellek uyarısı sinyali), önce/sonra karşılaştırması, toplu kapatma, otomatik başlayan ajanlar ve anlık bellek kullanımları |
 | **Ayarlar** | Oturum açılışında başlatma, yenileme aralığı, bildirimler (basınç, swap, hızlı büyüme) |
 | **Menü çubuğu** | Kullanım yüzdesi, mini özet, Hızlı Optimize |
@@ -46,6 +47,28 @@ Sadece derlemek için `./build.sh` → `build/MemScope.app`.
 ```bash
 xattr -dr com.apple.quarantine /Applications/MemScope.app
 ```
+
+## Kurallar & Koruma (v0.3)
+
+[RustWTM](https://github.com/RustWTM/RustWTM)'deki "arka plan koruyucu" fikrinden esinlenerek macOS'a özgü olarak yazıldı.
+
+| Özellik | Ne yapar |
+|---|---|
+| **Sistem koruyucu** | Toplam CPU eşiği (varsayılan %85) 10 sn aşılırsa en çok CPU kullanan arka plan uygulamalarını kademeli yavaşlatır: önce arka plan modu (E-core), isteğe bağlı olarak dondurma. CPU %60'ın altında 20 sn kalınca hepsini geri alır. |
+| **Bellek koruyucu** | Bellek basıncı Uyarı/Kritik seviyede kalırsa en büyük arka plan uygulamalarını bildirir veya dondurur. |
+| **Odak modu** | Seçtiğiniz uygulama (oyun, Blender, Xcode…) öndeyken diğerlerini E-core'a alır; önden çekilince hemen normale döndürür. |
+| **Kurallar** | "Slack 30 sn boyunca %40 CPU'yu geçerse arka plana al", "Tarayıcı 4 GB'ı geçerse bildir" gibi. Eşleşme: virgülle ayrılmış adlar, `*`/`?` jokerleri veya `/` ile başlayan yollar. Eylemler: Bildir · Arka plana al (E-core) · Dondur · Kapat. |
+| **Elle müdahale** | Süreç ayrıntılarında "Arka plana al", "Dondur", "Normale döndür". |
+
+**Güvenlik ilkeleri**
+
+- Varsayılan mod **Deneme**dir: hiçbir şeye dokunulmaz, yapılacaklar Olaylar listesine yazılır. Gerçek uygulama için Uygula'ya geçmeniz gerekir.
+- Öndeki uygulama, macOS servisleri, kritik süreçler, root süreçleri, koruma listesi ve MemScope hiçbir zaman otomatik müdahaleye uğramaz.
+- Arka plan modu ve dondurma geri alınabilir; koşul geçince otomatik geri alınır. "Geri Al" düğmesi ayrıca o uygulamayı 10 dakika muaf tutar.
+- MemScope kapanırken tüm müdahaleleri geri alır. Beklenmedik şekilde kapanırsa dondurduğu süreçler diske kaydedildiği için bir sonraki açılışta otomatik devam ettirilir.
+- Öncelik düşürme (`renice`) bilinçli olarak yoktur: macOS'ta yönetici izni olmadan geri alınamaz.
+
+Kullanılan macOS mekanizmaları: `setpriority(PRIO_DARWIN_PROCESS, PRIO_DARWIN_BG)` (taskpolicy -b ile aynı; düşük öncelik bandı, E-core, I/O kısıtlama), `SIGSTOP`/`SIGCONT`, `host_processor_info` (sistem CPU) ve `proc_pid_rusage` (süreç başına anlık CPU). Ayarlar `~/Library/Application Support/MemScope/rules.json` dosyasındadır.
 
 ## Bakım işlemleri nasıl çalışır?
 
@@ -79,11 +102,13 @@ Sources/MemScope/
 ├── SystemMemory.swift       # host_statistics64, swap, basınç
 ├── ProcessSampler.swift     # ps + proc_pid_rusage, gruplama, komut satırları
 ├── ProcessKnowledge.swift   # Süreç bilgi tabanı (açıklamalar / kategoriler)
+├── RuleModels.swift         # Kural, eylem, mod ve yapılandırma modelleri
+├── RuleEngine.swift         # Kural motoru: koruyucular, odak modu, olaylar, çökme kurtarma
 ├── Maintenance.swift        # purge / memory_pressure (yönetici izniyle)
 ├── LaunchItems.swift        # LaunchAgents / LaunchDaemons taraması
 ├── Notifier.swift           # Bildirimler
 ├── HistoryRecorder.swift    # 7 günlük dakikalık geçmiş
-└── Views/                   # Panel, Süreçler, Bakım, Ayarlar, bileşenler
+└── Views/                   # Panel, Süreçler, Kurallar, Bakım, Ayarlar, bileşenler
 ```
 
 ## Katkı
@@ -98,9 +123,11 @@ Hata bildirimleri ve öneriler için issue açabilirsiniz.
 
 ## Yol haritası
 
+- [x] Kural motoru: sistem / bellek koruyucu, odak modu, kurallar, deneme modu (v0.3)
+- [ ] Kaynak izleme: CPU (P/E çekirdek), GPU, disk, ağ grafikleri; süreç ağacı; portlar
+- [ ] Uygulama başına uzun dönem geçmiş ve bellek sızıntısı tespiti
+- [ ] CLI + JSON + MCP sunucusu
 - [ ] Otomatik başlayan ajanları uygulama içinden devre dışı bırakma
-- [ ] Uygulama başına uzun dönem bellek geçmişi ve "en çok büyüyenler" raporu
-- [ ] Basınç yükseldiğinde otomatik optimize (isteğe bağlı)
 - [ ] İngilizce arayüz
 - [ ] Widget (masaüstü / Bildirim Merkezi)
 

@@ -17,6 +17,8 @@ enum ProcessSampler {
 
     static func sample() -> [AppGroup] {
         let raws = listProcesses()
+        let now = DispatchTime.now().uptimeNanoseconds
+        defer { cpuCache = cpuCache.filter { alive.contains($0.key) }; alive.removeAll(keepingCapacity: true) }
         let myUID = getuid()
         var pathByPid: [pid_t: String] = [:]
         for r in raws { pathByPid[r.pid] = r.path }
@@ -27,11 +29,15 @@ enum ProcessSampler {
         for r in raws {
             var mem = r.rss
             var isFootprint = false
-            if let fp = footprint(of: r.pid) { mem = fp; isFootprint = true }
+            var cpu = r.cpu
+            if let u = usage(of: r.pid) {
+                mem = u.footprint; isFootprint = true
+                if let c = instantCPU(pid: r.pid, cpuNs: u.cpuNs, now: now) { cpu = c }
+            }
             let wantsArgs = r.uid == myUID && !r.path.hasPrefix("/System/") && !r.path.hasPrefix("/usr/libexec/") && !r.path.contains(".app/")
             let info = ProcInfo(pid: r.pid, ppid: r.ppid, uid: r.uid,
                                 name: (r.path as NSString).lastPathComponent,
-                                path: r.path, memory: mem, cpu: r.cpu, isFootprint: isFootprint,
+                                path: r.path, memory: mem, cpu: cpu, isFootprint: isFootprint,
                                 command: wantsArgs ? commandLine(of: r.pid) : nil)
 
             var key = r.path
@@ -138,15 +144,33 @@ enum ProcessSampler {
         return nil
     }
 
-    /// Activity Monitor'ün "Bellek" sütunundaki değer (phys_footprint). Yalnızca kendi kullanıcımızın süreçleri için okunabilir.
-    private static func footprint(of pid: pid_t) -> UInt64? {
+    /// phys_footprint (Activity Monitor'ün "Bellek" sütunu) ve toplam CPU süresi (ns). Yalnızca kendi süreçlerimiz için okunabilir.
+    private static func usage(of pid: pid_t) -> (footprint: UInt64, cpuNs: UInt64)? {
         var info = rusage_info_v4()
         let r = withUnsafeMutablePointer(to: &info) {
             $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
                 proc_pid_rusage(pid, RUSAGE_INFO_V4, $0)
             }
         }
-        return r == 0 ? info.ri_phys_footprint : nil
+        guard r == 0 else { return nil }
+        // Apple Silicon'da süreler mach "tick" birimindedir
+        let ticks = info.ri_user_time + info.ri_system_time
+        return (info.ri_phys_footprint, ticks * UInt64(timebase.numer) / UInt64(timebase.denom))
+    }
+
+    private static let timebase: mach_timebase_info_data_t = {
+        var tb = mach_timebase_info_data_t(); mach_timebase_info(&tb); return tb
+    }()
+
+    private static var cpuCache: [pid_t: (cpuNs: UInt64, at: UInt64)] = [:]
+    private static var alive: Set<pid_t> = []
+
+    /// İki örnek arasındaki CPU süresi / geçen süre → tek çekirdeğin yüzdesi (ps ile aynı ölçek, 100 = 1 çekirdek)
+    private static func instantCPU(pid: pid_t, cpuNs: UInt64, now: UInt64) -> Double? {
+        alive.insert(pid)
+        defer { cpuCache[pid] = (cpuNs, now) }
+        guard let prev = cpuCache[pid], now > prev.at, cpuNs >= prev.cpuNs else { return nil }
+        return Double(cpuNs - prev.cpuNs) / Double(now - prev.at) * 100
     }
 
     /// `ps` root süreçlerinin RSS değerini de görebildiği için ana kaynak olarak kullanılıyor.

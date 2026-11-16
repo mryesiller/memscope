@@ -25,6 +25,7 @@ final class MemoryStore {
 
     // Uzun dönem geçmiş (dakikalık, 7 gün)
     @ObservationIgnored let recorder = HistoryRecorder()
+    let engine = RuleEngine()
     var longHistory: [StoredPoint] = []
 
     static let intervalChoices: [TimeInterval] = [1, 2, 5, 10]
@@ -105,6 +106,7 @@ final class MemoryStore {
         lastUpdate = now
 
         if recorder.add(sys, at: now) { longHistory = recorder.points }
+        engine.evaluate(groups: groups, system: sys, now: now)
         Notifier.shared.evaluate(system: sys, growing: growing)
     }
 
